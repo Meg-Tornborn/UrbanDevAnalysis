@@ -1,73 +1,52 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import numpy as np
+from flask import Flask, render_template, request, jsonify
+import csv
+import io
 
+app = Flask(__name__)
 
-st.set_page_config(page_title="Аналіз урбанізації", layout="wide")
+@app.route('/')
+def index():
+    return render_template('index.html')
 
+@app.route('/countries', methods=['POST'])
+def get_countries():
+    file = request.files['file']
+    if not file:
+        return jsonify({'error': 'Файл не завантажено'}), 400
 
-# Завантаження CSV з даними
-@st.cache_data
-def load_data():
-    df = pd.read_csv("urban_growth_forecast.csv")
-    return df
+    stream = io.StringIO(file.stream.read().decode("utf-8"))
+    reader = csv.DictReader(stream)
 
-df = load_data()
-countries = df["Country"].unique()
+    countries = sorted(set(row['Country'] for row in reader if row['Country'].strip()))
+    return jsonify({'countries': countries})
 
-st.title("📊 Інтелектуальна система для аналізу міського розвитку")
+@app.route('/data', methods=['POST'])
+def get_data():
+    country = request.form.get('country')
+    file = request.files['file']
+    if not file or not country:
+        return jsonify({'error': 'Необхідно вказати країну і завантажити файл'}), 400
 
-# Вибір країни
-country = st.sidebar.selectbox("Оберіть країну:", countries)
-df_country = df[df["Country"] == country]
+    stream = io.StringIO(file.stream.read().decode("utf-8"))
+    reader = csv.DictReader(stream)
 
-tabs = st.tabs(["📈 Населення", "🏫 Інфраструктура", "📋 Дані"])
+    years, population, schools, hospitals, roads = [], [], [], [], []
 
-with tabs[0]:
-    st.subheader(f"Прогноз зростання населення для {country}")
-    fig = px.line(
-        df_country,
-        x="Year",
-        y="Population",
-        title=f"Населення {country} (1996–2028)",
-        markers=True
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    for row in reader:
+        if row['Country'] == country:
+            years.append(row['Year'])
+            population.append(int(float(row['Population'])))
+            schools.append(float(row['Infrastructure.Schools.Per100k']))
+            hospitals.append(float(row['Infrastructure.Hospitals.Per100k']))
+            roads.append(float(row['Infrastructure.RoadLength.KmPerCapita']))
 
-with tabs[1]:
-    st.subheader(f"Інфраструктурні показники для {country}")
+    return jsonify({
+        'years': years,
+        'population': population,
+        'schools': schools,
+        'hospitals': hospitals,
+        'roads': roads
+    })
 
-    col1, col2 = st.columns(2)
-    with col1:
-        fig_schools = px.line(
-            df_country,
-            x="Year",
-            y="Infrastructure.Schools.Per100k",
-            title="Кількість шкіл на 100 тис. населення",
-            markers=True
-        )
-        st.plotly_chart(fig_schools, use_container_width=True)
-
-        fig_road = px.line(
-            df_country,
-            x="Year",
-            y="Infrastructure.RoadLength.KmPerCapita",
-            title="Довжина доріг на душу населення",
-            markers=True
-        )
-        st.plotly_chart(fig_road, use_container_width=True)
-
-    with col2:
-        fig_hospitals = px.line(
-            df_country,
-            x="Year",
-            y="Infrastructure.Hospitals.Per100k",
-            title="Кількість лікарень на 100 тис. населення",
-            markers=True
-        )
-        st.plotly_chart(fig_hospitals, use_container_width=True)
-
-with tabs[2]:
-    st.subheader(f"Дані для {country}")
-    st.dataframe(df_country.reset_index(drop=True))
+if __name__ == '__main__':
+    app.run(debug=True)

@@ -1,52 +1,56 @@
 from flask import Flask, render_template, request, jsonify
-import csv
-import io
+import pandas as pd
+from io import StringIO
+from sklearn.linear_model import LinearRegression
+import numpy as np
 
 app = Flask(__name__)
+data = pd.DataFrame()
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/countries', methods=['POST'])
-def get_countries():
+@app.route('/upload', methods=['POST'])
+def upload():
+    global data
     file = request.files['file']
-    if not file:
-        return jsonify({'error': 'Файл не завантажено'}), 400
+    content = file.stream.read().decode('utf-8')
+    data = pd.read_csv(StringIO(content))
+    data = data[data['Year'] <= 2025]
+    return jsonify({'countries': sorted(data['City'].unique().tolist())})
 
-    stream = io.StringIO(file.stream.read().decode("utf-8"))
-    reader = csv.DictReader(stream)
-
-    countries = sorted(set(row['Country'] for row in reader if row['Country'].strip()))
-    return jsonify({'countries': countries})
-
-@app.route('/data', methods=['POST'])
+@app.route('/data')
 def get_data():
-    country = request.form.get('country')
-    file = request.files['file']
-    if not file or not country:
-        return jsonify({'error': 'Необхідно вказати країну і завантажити файл'}), 400
+    countries = request.args.getlist('countries[]')
+    if not countries:
+        return jsonify({"error": "No countries selected"}), 400
 
-    stream = io.StringIO(file.stream.read().decode("utf-8"))
-    reader = csv.DictReader(stream)
+    df = data[data['City'].isin(countries)]
+    all_rows = []
 
-    years, population, schools, hospitals, roads = [], [], [], [], []
+    for City in countries:
+        df_City = df[df['City'] == City]
+        for col in ['Population', 'Infrastructure.Schools.Per100k',
+                    'Infrastructure.Hospitals.Per100k', 'Infrastructure.RoadLength.KmPerCapita']:
+            model = LinearRegression()
+            X = df_City['Year'].values.reshape(-1, 1)
+            y = df_City[col].values
+            if len(y) < 2:
+                continue
+            model.fit(X, y)
+            for year in [2026, 2027, 2028]:
+                pred = model.predict(np.array([[year]]))[0]
+                all_rows.append({
+                    'City': City,
+                    'Year': year,
+                    col: pred
+                })
 
-    for row in reader:
-        if row['Country'] == country:
-            years.append(row['Year'])
-            population.append(int(float(row['Population'])))
-            schools.append(float(row['Infrastructure.Schools.Per100k']))
-            hospitals.append(float(row['Infrastructure.Hospitals.Per100k']))
-            roads.append(float(row['Infrastructure.RoadLength.KmPerCapita']))
+    forecast_df = pd.DataFrame(all_rows).groupby(['City', 'Year']).first().reset_index()
+    df = pd.concat([df, forecast_df], ignore_index=True).sort_values(by=['City', 'Year'])
 
-    return jsonify({
-        'years': years,
-        'population': population,
-        'schools': schools,
-        'hospitals': hospitals,
-        'roads': roads
-    })
+    return df.to_json(orient='records')
 
 if __name__ == '__main__':
     app.run(debug=True)

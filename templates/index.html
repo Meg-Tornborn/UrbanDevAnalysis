@@ -2,185 +2,47 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Аналіз зростання населення</title>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    body {
-      font-family: 'Roboto', sans-serif;
-      background: #f9f9f9;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem;
-      color: #333;
-    }
-    header {
-      background-color: #4CAF50;
-      color: white;
-      padding: 1rem 2rem;
-      border-radius: 10px;
-      margin-bottom: 2rem;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      max-width: 800px;
-      width: 100%;
-      text-align: center;
-    }
-    .container {
-      background: white;
-      padding: 2rem;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-      max-width: 800px;
-      width: 100%;
-    }
-    input[type="file"] {
-      margin-bottom: 1rem;
-    }
-    canvas {
-      margin-top: 2rem;
-      max-width: 100%;
-    }
-    footer {
-      margin-top: 3rem;
-      font-size: 0.9rem;
-      color: #777;
-    }
-  </style>
+  <title>📈 Міський розвиток</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridjs/dist/theme/mermaid.min.css" />
 </head>
 <body>
   <header>
-    <h1>📊 Аналіз зростання населення</h1>
-    <p>Завантаж CSV-файл, щоб побачити графік динаміки</p>
+    <h1>📊 Аналітика міського розвитку</h1>
+    <input type="file" id="csvFile" accept=".csv">
+    <select id="CitySelect" multiple></select>
+    <button onclick="toggleTheme()">🎨 Тема</button>
   </header>
 
-  <div class="container">
-    <input type="file" id="csvFile" accept=".csv">
-    <select id="countrySelect" style="margin-bottom: 1rem; display: none;"></select>
-    <canvas id="populationChart"></canvas>
-    <canvas id="schoolsChart"></canvas>
-    <canvas id="hospitalsChart"></canvas>
-    <canvas id="roadsChart"></canvas>
+  <main>
+    <div id="tabs">
+      <ul>
+        <li><a href="#populationTab">Населення</a></li>
+        <li><a href="#schoolsTab">Школи на 100к</a></li>
+        <li><a href="#hospitalsTab">Лікарні на 100к</a></li>
+        <li><a href="#roadsTab">Довжина доріг</a></li>
+      </ul>
+      <div id="populationTab" class="tab-content active">
+        <canvas id="populationChart"></canvas>
+      </div>
+      <div id="schoolsTab" class="tab-content">
+        <canvas id="schoolsChart"></canvas>
+      </div>
+      <div id="hospitalsTab" class="tab-content">
+        <canvas id="hospitalsChart"></canvas>
+      </div>
+      <div id="roadsTab" class="tab-content">
+        <canvas id="roadsChart"></canvas>
+      </div>
+    </div>
 
->
-  </div>
+    <div id="table" class="table-container"></div>
+  </main>
 
-  <footer>
-    &copy; 2025 Аналітична система міського розвитку
-  </footer>
+  <footer>&copy; 2025 Інтелектуальна система</footer>
 
-  <script>
-    let uploadedFile = null;
-  
-    const destroyIfExists = chart => {
-      if (chart) chart.destroy();
-    };
-  
-    let populationChart, schoolsChart, hospitalsChart, roadsChart;
-  
-    document.getElementById('csvFile').addEventListener('change', function (e) {
-      uploadedFile = e.target.files[0];
-      if (!uploadedFile) return;
-  
-      const formData = new FormData();
-      formData.append('file', uploadedFile);
-  
-      fetch('/countries', {
-        method: 'POST',
-        body: formData
-      })
-      .then(res => res.json())
-      .then(data => {
-        const countrySelect = document.getElementById('countrySelect');
-        countrySelect.innerHTML = '<option disabled selected>Оберіть країну</option>';
-        data.countries.forEach(c => {
-          const option = document.createElement('option');
-          option.value = c;
-          option.textContent = c;
-          countrySelect.appendChild(option);
-        });
-        countrySelect.style.display = 'block';
-      });
-    });
-  
-    document.getElementById('countrySelect').addEventListener('change', function () {
-      const selectedCountry = this.value;
-      if (!uploadedFile || !selectedCountry) return;
-  
-      const formData = new FormData();
-      formData.append('file', uploadedFile);
-      formData.append('country', selectedCountry);
-  
-      fetch('/data', {
-        method: 'POST',
-        body: formData
-      })
-      .then(res => res.json())
-      .then(data => {
-        const years = data.years;
-  
-        // Знищення попередніх графіків, якщо були
-        destroyIfExists(populationChart);
-        destroyIfExists(schoolsChart);
-        destroyIfExists(hospitalsChart);
-        destroyIfExists(roadsChart);
-  
-        const config = (label, color, values) => ({
-          type: 'line',
-          data: {
-            labels: years,
-            datasets: [{
-              label,
-              data: values,
-              borderColor: color,
-              backgroundColor: color + '33',
-              fill: true,
-              borderWidth: 2,
-              pointRadius: 4,
-              pointHoverRadius: 6,
-              tension: 0.3
-            }]
-          },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: { display: true, position: 'bottom' }
-            },
-            scales: {
-              y: {
-                beginAtZero: false,
-                title: { display: true, text: label }
-              },
-              x: {
-                title: { display: true, text: 'Рік' }
-              }
-            }
-          }
-        });
-  
-        populationChart = new Chart(
-          document.getElementById('populationChart').getContext('2d'),
-          config('Населення', '#4CAF50', data.population)
-        );
-  
-        schoolsChart = new Chart(
-          document.getElementById('schoolsChart').getContext('2d'),
-          config('Школи (на 100 тис.)', '#2196F3', data.schools)
-        );
-  
-        hospitalsChart = new Chart(
-          document.getElementById('hospitalsChart').getContext('2d'),
-          config('Лікарні (на 100 тис.)', '#FF9800', data.hospitals)
-        );
-  
-        roadsChart = new Chart(
-          document.getElementById('roadsChart').getContext('2d'),
-          config('Дороги (км/людину)', '#9C27B0', data.roads)
-        );
-      });
-    });
-  </script>
-  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gridjs/dist/gridjs.umd.js"></script>
+  <script src="{{ url_for('static', filename='script.js') }}" defer></script>
 </body>
 </html>
